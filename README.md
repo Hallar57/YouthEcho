@@ -1,9 +1,9 @@
-# Run this project
+## Run this project
 1. Clone the repo
 2. Run `npm install`
 3. Run `npx expo start -c`
 
-## YouthEcho
+# YouthEcho
 A mobile app that empowers children in Karachi to report urban issues 
 (waste, broken infrastructure, sewage) using text, voice, or photos. 
 The AI agent analyzes the complaint and generates a social media post, 
