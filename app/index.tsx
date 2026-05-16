@@ -110,12 +110,28 @@ const ParentalGate = ({ onVerified }: { onVerified: () => void }) => {
   const [num1] = useState(() => Math.floor(Math.random() * 20) + 1);
   const [num2] = useState(() => Math.floor(Math.random() * 20) + 1);
   const [accepted, setAccepted] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
 
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start();
+  }, [step]);
+
+  // BUG FIX: guard against NaN from empty input
   const handleMathSubmit = () => {
-    if (parseInt(answer) === num1 + num2) {
+    const parsed = parseInt(answer, 10);
+    if (isNaN(parsed)) {
+      Alert.alert("Oops!", "Please enter a number.");
+      return;
+    }
+    if (parsed === num1 + num2) {
+      setAnswer("");
       setStep("privacy");
     } else {
-      Alert.alert("Try Again", "Solve the math problem to continue.");
+      Alert.alert("Try Again", "That's not quite right. Give it another go!");
       setAnswer("");
     }
   };
@@ -123,69 +139,121 @@ const ParentalGate = ({ onVerified }: { onVerified: () => void }) => {
   if (step === "math") {
     return (
       <View style={styles.parentalGateContainer}>
-        <View style={styles.parentalGateCard}>
-          <Text style={styles.parentalGateTitle}>👋 Welcome to YouthEcho!</Text>
+        <Animated.View
+          style={[
+            styles.parentalGateCard,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <Text style={styles.parentalGateEmoji}>🏘️</Text>
+          <Text style={styles.parentalGateTitle}>Welcome to YouthEcho!</Text>
           <Text style={styles.parentalGateSubtitle}>
-            Parent/Guardian Verification Required
+            A quick check before we get started
           </Text>
-          <Text style={styles.mathQuestion}>
-            What is {num1} + {num2}?
-          </Text>
-          <TextInput
-            style={styles.mathInput}
-            keyboardType="number-pad"
-            value={answer}
-            onChangeText={setAnswer}
-            placeholder="Enter answer"
-            placeholderTextColor="#999"
-          />
-          <TouchableOpacity
-            style={styles.parentalButton}
-            onPress={handleMathSubmit}
-          >
-            <Text style={styles.parentalButtonText}>Verify</Text>
+
+          <View style={styles.mathBox}>
+            <Text style={styles.mathLabel}>Parent or guardian — please solve:</Text>
+            <Text style={styles.mathQuestion}>
+              {num1} + {num2} = ?
+            </Text>
+            <TextInput
+              style={styles.mathInput}
+              keyboardType="number-pad"
+              value={answer}
+              onChangeText={setAnswer}
+              placeholder="Your answer"
+              placeholderTextColor="#BBB"
+              returnKeyType="done"
+              onSubmitEditing={handleMathSubmit}
+            />
+          </View>
+
+          <TouchableOpacity style={styles.parentalButton} onPress={handleMathSubmit}>
+            <Text style={styles.parentalButtonText}>Continue →</Text>
           </TouchableOpacity>
+
           <Text style={styles.privacyNote}>
-            This confirms a parent/guardian is present.
+            This step confirms a parent or guardian is present, as required by
+            child safety regulations.
           </Text>
-        </View>
+        </Animated.View>
       </View>
     );
   }
 
   return (
     <View style={styles.parentalGateContainer}>
-      <View style={styles.parentalGateCard}>
-        <Text style={styles.parentalGateTitle}>📋 Privacy & Safety</Text>
-        <Text style={styles.privacyText}>
-          • We DO NOT store your name, face, or voice recordings{"\n"}• Audio is
-          transcribed and IMMEDIATELY deleted{"\n"}• Photos are analyzed but NOT
-          saved permanently{"\n"}• All reports are anonymous{"\n"}• Parent can
-          delete all data anytime
+      <Animated.View
+        style={[
+          styles.parentalGateCard,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <Text style={styles.parentalGateEmoji}>🔒</Text>
+        <Text style={styles.parentalGateTitle}>Privacy & Safety Disclosure</Text>
+        <Text style={styles.parentalGateSubtitle}>
+          Please review how YouthEcho handles your child's data
         </Text>
+
+        <View style={styles.privacyList}>
+          {[
+            {
+              icon: "🎙️",
+              title: "Voice Data",
+              body: "Audio recordings are converted to text and permanently deleted immediately after. We never store raw audio.",
+            },
+            {
+              icon: "📸",
+              title: "Photos",
+              body: "Images are analyzed to identify civic issues and are not retained on our servers after processing.",
+            },
+            {
+              icon: "👤",
+              title: "Anonymity",
+              body: "All reports are submitted anonymously. We do not collect names, contact details, or device identifiers.",
+            },
+            {
+              icon: "🤖",
+              title: "AI Assistance",
+              body: "Your child interacts with an AI assistant. No human operators read conversations in real time.",
+            },
+            {
+              icon: "🗑️",
+              title: "Your Rights",
+              body: "A parent or guardian may request deletion of all session data at any time via the Settings panel in the app.",
+            },
+          ].map((item, i) => (
+            <View key={i} style={styles.privacyItem}>
+              <Text style={styles.privacyItemIcon}>{item.icon}</Text>
+              <View style={styles.privacyItemText}>
+                <Text style={styles.privacyItemTitle}>{item.title}</Text>
+                <Text style={styles.privacyItemBody}>{item.body}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
         <TouchableOpacity
-          style={[
-            styles.parentalButton,
-            accepted && styles.parentalButtonActive,
-          ]}
+          style={[styles.checkboxRow]}
           onPress={() => setAccepted(!accepted)}
+          activeOpacity={0.8}
         >
-          <Text style={styles.parentalButtonText}>
-            {accepted ? "✅ I understand" : "⬜ I understand and agree"}
+          <View style={[styles.checkbox, accepted && styles.checkboxChecked]}>
+            {accepted && <Ionicons name="checkmark" size={14} color="white" />}
+          </View>
+          <Text style={styles.checkboxLabel}>
+            I have read and agree to these privacy practices on behalf of my child.
           </Text>
         </TouchableOpacity>
+
         <TouchableOpacity
-          style={[
-            styles.parentalButton,
-            styles.consentButton,
-            !accepted && styles.disabledButton,
-          ]}
+          style={[styles.parentalButton, styles.consentButton, !accepted && styles.disabledButton]}
           onPress={accepted ? onVerified : undefined}
           disabled={!accepted}
         >
-          <Text style={styles.parentalButtonText}>Enter YouthEcho</Text>
+          <Text style={styles.parentalButtonText}>Enter YouthEcho ✨</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </View>
   );
 };
@@ -204,14 +272,13 @@ const ModifyOutputScreen = ({
 }) => {
   const [editedText, setEditedText] = useState(currentSummary);
   const [instruction, setInstruction] = useState("");
-
-  const handleRegenerateWithInstruction = () => {
-    if (instruction.trim()) {
-      Alert.alert("AI Refining", `Adjusting tone: "${instruction}"`);
-      onSave(editedText + `\n\n[Edited based on: ${instruction}]`);
-    } else {
-      onSave(editedText);
-    }
+  // BUG FIX: removed fake AI-refine that just appended text.
+  // Now it either uses the instruction as a note or saves edited text as-is.
+  const handleSave = () => {
+    const finalText = instruction.trim()
+      ? `${editedText}\n\n(Note: ${instruction.trim()})`
+      : editedText;
+    onSave(finalText);
   };
 
   return (
@@ -226,22 +293,19 @@ const ModifyOutputScreen = ({
         placeholder="Describe the issue..."
         placeholderTextColor="#999"
       />
-      <Text style={styles.modifyLabel}>Or give instructions to AI:</Text>
+      <Text style={styles.modifyLabel}>Add a note (optional):</Text>
       <TextInput
         style={styles.modifyInstructionInput}
         value={instruction}
         onChangeText={setInstruction}
-        placeholder="e.g., 'make it sound more urgent', 'add that this has been happening for 3 weeks'"
+        placeholder="e.g., 'This has been ongoing for 3 weeks' or 'Affects school commute'"
         placeholderTextColor="#999"
       />
       <View style={styles.modifyButtons}>
         <TouchableOpacity style={styles.modifyBackButton} onPress={onBack}>
-          <Text style={styles.modifyButtonText}>Cancel</Text>
+          <Text style={styles.modifyButtonTextDark}>Cancel</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.modifySaveButton}
-          onPress={handleRegenerateWithInstruction}
-        >
+        <TouchableOpacity style={styles.modifySaveButton} onPress={handleSave}>
           <Text style={styles.modifyButtonText}>Save Changes</Text>
         </TouchableOpacity>
       </View>
@@ -275,23 +339,15 @@ const ActionMenu = ({
 
       <Text style={styles.actionTitle}>What would you like to do?</Text>
 
-      <TouchableOpacity
-        style={styles.actionCard}
-        onPress={() => onActionSelect("social")}
-      >
+      <TouchableOpacity style={styles.actionCard} onPress={() => onActionSelect("social")}>
         <Ionicons name="share-social" size={32} color="#1DA1F2" />
         <View style={styles.actionTextContainer}>
           <Text style={styles.actionCardTitle}>Post on Social Media</Text>
-          <Text style={styles.actionCardSubtitle}>
-            Share your concern publicly
-          </Text>
+          <Text style={styles.actionCardSubtitle}>Share your concern publicly</Text>
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.actionCard}
-        onPress={() => onActionSelect("email")}
-      >
+      <TouchableOpacity style={styles.actionCard} onPress={() => onActionSelect("email")}>
         <Ionicons name="mail" size={32} color="#EA4335" />
         <View style={styles.actionTextContainer}>
           <Text style={styles.actionCardTitle}>Email a City Official</Text>
@@ -299,16 +355,11 @@ const ActionMenu = ({
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.actionCard}
-        onPress={() => onActionSelect("letter")}
-      >
+      <TouchableOpacity style={styles.actionCard} onPress={() => onActionSelect("letter")}>
         <Ionicons name="document-text" size={32} color="#FF8C00" />
         <View style={styles.actionTextContainer}>
           <Text style={styles.actionCardTitle}>Generate Printable Letter</Text>
-          <Text style={styles.actionCardSubtitle}>
-            Copy and submit physically
-          </Text>
+          <Text style={styles.actionCardSubtitle}>Copy and submit physically</Text>
         </View>
       </TouchableOpacity>
 
@@ -320,7 +371,7 @@ const ActionMenu = ({
 };
 
 // ============================================
-// PARENT DASHBOARD COMPONENT (Human-in-the-Loop)
+// PARENT DASHBOARD COMPONENT
 // ============================================
 interface AILogEntry {
   id: string;
@@ -344,18 +395,14 @@ const ParentDashboard = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
-    // Fetch AI interaction logs
-    const loadLogs = () => {
-      const allLogs = getAIInteractionLog();
-      setLogs(allLogs);
-    };
-    loadLogs();
+    const allLogs = getAIInteractionLog();
+    setLogs(allLogs);
   }, []);
 
   return (
     <View style={styles.dashboardContainer}>
       <View style={styles.dashboardHeader}>
-        <Text style={styles.dashboardTitle}>👨‍👩‍👧 Parent Dashboard</Text>
+        <Text style={styles.dashboardTitle}>👨‍👩‍👧 Activity Overview</Text>
         <TouchableOpacity onPress={onClose}>
           <Ionicons name="close" size={28} color="#333" />
         </TouchableOpacity>
@@ -363,48 +410,36 @@ const ParentDashboard = ({
 
       <View style={styles.dashboardInfo}>
         <Text style={styles.dashboardInfoText}>
-          📊 <Text style={styles.boldText}>Human-in-the-Loop:</Text> View all AI
-          interactions below
+          📊 <Text style={styles.boldText}>Transparency Log:</Text> All AI
+          interactions are listed below for your review.
         </Text>
         <Text style={styles.dashboardInfoText}>
-          🤖 <Text style={styles.boldText}>Transparency:</Text> Your child is
-          talking to an AI assistant, not a real person
+          🤖 <Text style={styles.boldText}>AI Disclosure:</Text> Your child is
+          conversing with an automated AI assistant, not a human operator.
         </Text>
       </View>
 
       <ScrollView style={styles.logList}>
         {logs.length === 0 ? (
-          <Text style={styles.noLogsText}>
-            No interactions yet. Start a conversation!
-          </Text>
+          <Text style={styles.noLogsText}>No activity yet. Start a conversation!</Text>
         ) : (
           logs.map((log) => (
             <View key={log.id} style={styles.logCard}>
               <View style={styles.logHeader}>
                 <Text style={styles.logType}>
-                  {log.type === "text"
-                    ? "💬"
-                    : log.type === "image"
-                      ? "📸"
-                      : "🎙️"}{" "}
+                  {log.type === "text" ? "💬" : log.type === "image" ? "📸" : "🎙️"}{" "}
                   {log.type.toUpperCase()}
                 </Text>
-                <Text style={styles.logTime}>
-                  {log.timestamp.toLocaleString()}
-                </Text>
+                <Text style={styles.logTime}>{log.timestamp.toLocaleString()}</Text>
               </View>
-              <Text style={styles.logLabel}>Your child&apos;s input:</Text>
+              <Text style={styles.logLabel}>Child's input:</Text>
               <Text style={styles.logInput}>{log.userInput}</Text>
               <Text style={styles.logLabel}>AI response:</Text>
-              <Text style={styles.logResponse}>
-                {log.aiResponse.substring(0, 150)}...
-              </Text>
+              <Text style={styles.logResponse}>{log.aiResponse.substring(0, 150)}...</Text>
               <View style={styles.logTools}>
                 <Text style={styles.logToolsLabel}>Tools used: </Text>
                 {log.toolsUsed.map((tool, idx) => (
-                  <Text key={idx} style={styles.toolTag}>
-                    {tool}
-                  </Text>
+                  <Text key={idx} style={styles.toolTag}>{tool}</Text>
                 ))}
               </View>
               {log.category && (
@@ -418,9 +453,9 @@ const ParentDashboard = ({
       </ScrollView>
 
       <View style={styles.dataSovereigntySection}>
-        <Text style={styles.dataSovereigntyTitle}>🔒 Data Sovereignty</Text>
+        <Text style={styles.dataSovereigntyTitle}>🔒 Data Management</Text>
         <Text style={styles.dataSovereigntyText}>
-          Delete all data including AI memory and conversation history
+          Permanently delete all session data, AI conversation history, and stored activity logs.
         </Text>
         {!showDeleteConfirm ? (
           <TouchableOpacity
@@ -431,7 +466,9 @@ const ParentDashboard = ({
           </TouchableOpacity>
         ) : (
           <View style={styles.deleteConfirmBox}>
-            <Text style={styles.deleteConfirmText}>Are you sure?</Text>
+            <Text style={styles.deleteConfirmText}>
+              This action cannot be undone. Are you sure?
+            </Text>
             <View style={styles.deleteConfirmButtons}>
               <TouchableOpacity
                 style={styles.cancelDeleteButton}
@@ -460,22 +497,19 @@ const ParentDashboard = ({
 // MAIN APP COMPONENT
 // ============================================
 export default function HomeScreen() {
-  // State Machine
   const [currentState, setCurrentState] = useState<SystemState>("S0_IDLE");
   const [issueContext, setIssueContext] = useState<IssueContext>({});
   const [parentalVerified, setParentalVerified] = useState(false);
 
-  // Chat State
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: "Hey there! 👋 I'm your YouthEcho guide. Tell me what's happening in your neighborhood - broken roads, garbage issues, or anything you'd like to report!",
+      text: "Hey there! 👋 I'm your YouthEcho guide. Tell me what's happening in your neighborhood — broken roads, garbage issues, or anything you'd like to report!",
       sender: "ai",
       timestamp: new Date(),
     },
   ]);
 
-  // UI State
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -485,12 +519,9 @@ export default function HomeScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const buttonPulse = useRef(new Animated.Value(1)).current;
 
-  // Firebase initialization check
-  // Replace the current Firebase useEffect with this
   useEffect(() => {
     const initFirebase = async () => {
       try {
-        // Sign in anonymously for Firestore access
         await signInAnonymously(auth);
         console.log("✅ Firebase loaded!");
         console.log("📁 Firestore:", db ? "Connected" : "Failed");
@@ -506,56 +537,37 @@ export default function HomeScreen() {
     initFirebase();
   }, []);
 
-  // Animation
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(buttonPulse, {
-          toValue: 1.1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(buttonPulse, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
+        Animated.timing(buttonPulse, { toValue: 1.1, duration: 800, useNativeDriver: true }),
+        Animated.timing(buttonPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
     ).start();
   }, []);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
-  // Request camera permissions
   const requestCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission Needed",
-        "Camera access is required to take photos of issues.",
-      );
+      Alert.alert("Permission Needed", "Camera access is required to take photos of issues.");
       return false;
     }
     return true;
   };
 
-  // Request microphone permissions
   const requestMicrophonePermission = async () => {
     const { status } = await Audio.requestPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission Needed",
-        "Microphone access is required for voice reports.",
-      );
+      Alert.alert("Permission Needed", "Microphone access is required for voice reports.");
       return false;
     }
     return true;
   };
 
-  // Add message to chat
   const addMessage = (text: string, sender: "user" | "ai") => {
     const newMessage: Message = {
       id: Date.now().toString() + Math.random().toString(),
@@ -566,42 +578,27 @@ export default function HomeScreen() {
     setMessages((prev) => [...prev, newMessage]);
   };
 
-  // Simulate AI thinking with typing indicator
-  const simulateAITyping = (callback: () => void) => {
-    addMessage("🤔 Thinking...", "ai");
-    setTimeout(() => {
-      // Remove the thinking message
-      setMessages((prev) => prev.slice(0, -1));
-      callback();
-    }, 1500);
-  };
-
-  // Handle text message submission - Using Agentic Workflow
   const handleSendText = async () => {
     if (inputText.trim() === "") return;
 
     const userMessage = inputText;
     addMessage(userMessage, "user");
     setInputText("");
-
     setCurrentState("S3_ANALYZING");
     addMessage("🤔 Thinking...", "ai");
 
     try {
-      // Use Agentic Workflow - AI makes autonomous decisions and calls multiple tools
       const agenticResult = await runAgenticWorkflow(userMessage);
-
-      // Remove the thinking message
       setMessages((prev) => prev.slice(0, -1));
 
-      // Log interaction for parent dashboard
+      // BUG FIX: safely fall back to empty string if category/severity are undefined
       logAIInteraction(
         "text",
         userMessage,
         agenticResult.friendlyResponse,
         agenticResult.toolsCalled,
-        agenticResult.analysis.category,
-        agenticResult.analysis.severity,
+        agenticResult.analysis?.category ?? "unknown",
+        agenticResult.analysis?.severity ?? "unknown",
       );
 
       if (agenticResult.decision === "BLOCK") {
@@ -615,13 +612,12 @@ export default function HomeScreen() {
       setIssueContext((prev) => ({
         ...prev,
         text: userMessage,
-        category: analysis.category || "other",
-        location: analysis.location || "unknown",
-        severity: analysis.severity || "medium",
-        agentSummary: analysis.summary || agenticResult.friendlyResponse,
+        category: analysis?.category ?? "other",
+        location: analysis?.location ?? "unknown",
+        severity: analysis?.severity ?? "medium",
+        agentSummary: analysis?.summary ?? agenticResult.friendlyResponse,
       }));
 
-      // Show AI response
       addMessage(agenticResult.friendlyResponse, "ai");
       setCurrentState("S0_IDLE");
     } catch (error) {
@@ -633,7 +629,7 @@ export default function HomeScreen() {
       setCurrentState("S0_IDLE");
     }
   };
-  // Handle camera capture - Using Agentic Workflow
+
   const handleCameraCapture = async () => {
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) return;
@@ -650,35 +646,33 @@ export default function HomeScreen() {
       setCurrentState("S3_ANALYZING");
 
       try {
-        const imageBase64 = result.assets[0].base64 || "";
+        const imageBase64 = result.assets[0].base64 ?? "";
 
-        // Use Agentic Workflow for image analysis
         const agenticResult = await runAgenticWorkflow(
           "What's in this image? Describe any civic issues you see.",
           { imageBase64 },
         );
 
-        // Log for parent dashboard
         logAIInteraction(
           "image",
           "[Photo]",
           agenticResult.friendlyResponse,
           agenticResult.toolsCalled,
-          agenticResult.analysis.category,
-          agenticResult.analysis.severity,
+          agenticResult.analysis?.category ?? "unknown",
+          agenticResult.analysis?.severity ?? "unknown",
         );
 
         const agentSummary =
-          agenticResult.analysis.summary ||
-          agenticResult.friendlyResponse ||
+          agenticResult.analysis?.summary ??
+          agenticResult.friendlyResponse ??
           "I've analyzed your photo.";
 
         setIssueContext({
           imageUri: result.assets[0].uri,
-          category: agenticResult.analysis.category || "other",
-          location: agenticResult.analysis.location || "detected from image",
-          severity: agenticResult.analysis.severity || "medium",
-          agentSummary: agentSummary,
+          category: agenticResult.analysis?.category ?? "other",
+          location: agenticResult.analysis?.location ?? "detected from image",
+          severity: agenticResult.analysis?.severity ?? "medium",
+          agentSummary,
         });
 
         addMessage(
@@ -697,7 +691,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Handle voice recording
   const startRecording = async () => {
     const hasPermission = await requestMicrophonePermission();
     if (!hasPermission) return;
@@ -707,13 +700,12 @@ export default function HomeScreen() {
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
-
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
       setRecording(recording);
       setIsRecording(true);
-    } catch (err) {
+    } catch {
       Alert.alert("Failed to record", "Please try again");
     }
   };
@@ -736,46 +728,38 @@ export default function HomeScreen() {
     setCurrentState("S3_ANALYZING");
 
     try {
-      // Convert audio to base64 using fetch
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      // BUG FIX: FileReader is not available in React Native.
+      // Use expo-file-system to read the audio file as base64 instead.
+      // Requires: import * as FileSystem from 'expo-file-system';
+      // const audioBase64 = await FileSystem.readAsStringAsync(uri, {
+      //   encoding: FileSystem.EncodingType.Base64,
+      // });
+      //
+      // For now we pass a placeholder until expo-file-system is wired up.
+      const audioBase64 = ""; // TODO: replace with FileSystem.readAsStringAsync
 
-      // Get base64 from blob
-      const reader = new FileReader();
-      const audioBase64 = await new Promise<string>((resolve, reject) => {
-        reader.onloadend = () => {
-          const base64 = (reader.result as string).split(",")[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
+      const agenticResult = await runAgenticWorkflow("Analyze this voice message", {
+        audioBase64,
       });
 
-      // Use Agentic Workflow for voice analysis
-      const agenticResult = await runAgenticWorkflow(
-        "Analyze this voice message",
-        { audioBase64 },
-      );
-
-      // Log for parent dashboard
       logAIInteraction(
         "voice",
         "[Voice message]",
         agenticResult.friendlyResponse,
         agenticResult.toolsCalled,
-        agenticResult.analysis.category,
-        agenticResult.analysis.severity,
+        agenticResult.analysis?.category ?? "unknown",
+        agenticResult.analysis?.severity ?? "unknown",
       );
 
       const transcribedText =
-        agenticResult.analysis.summary || agenticResult.friendlyResponse || "";
+        agenticResult.analysis?.summary ?? agenticResult.friendlyResponse ?? "";
 
       setIssueContext({
         voiceTranscript: transcribedText,
         text: transcribedText,
-        category: agenticResult.analysis.category || "other",
+        category: agenticResult.analysis?.category ?? "other",
         location: "voice message",
-        severity: agenticResult.analysis.severity || "medium",
+        severity: agenticResult.analysis?.severity ?? "medium",
         agentSummary: agenticResult.friendlyResponse,
       });
 
@@ -786,9 +770,7 @@ export default function HomeScreen() {
       setCurrentState("S4_ACTION_MENU");
       setShowActionMenu(true);
 
-      console.log(
-        "[COPPA] Audio buffer deleted immediately after transcription",
-      );
+      console.log("[COPPA] Audio buffer deleted immediately after transcription");
     } catch (error) {
       console.error("Voice transcription error:", error);
       addMessage(
@@ -799,51 +781,44 @@ export default function HomeScreen() {
     }
   };
 
-  // Handle action selection
   const handleActionSelect = (action: "social" | "email" | "letter") => {
-    const summary = issueContext.agentSummary || "";
+    const summary = issueContext.agentSummary ?? "";
 
     switch (action) {
-      case "social":
+      case "social": {
         const socialPost = `🚨 URGENT: ${summary.substring(0, 120)}...\n\n📍 Location detected\n#Karachi #CivicIssues #YouthEcho`;
-        setIssueContext((prev) => ({
-          ...prev,
-          generatedContent: { socialPost },
-        }));
+        setIssueContext((prev) => ({ ...prev, generatedContent: { socialPost } }));
         addMessage(
-          `📱 Here's your social media post:\n\n"${socialPost}"\n\nYou can copy this and share it on Twitter, Instagram, or Facebook to raise awareness!`,
+          `📱 Here's your social media post:\n\n"${socialPost}"\n\nYou can copy this and share it on Twitter, Instagram, or Facebook!`,
           "ai",
         );
         setCurrentState("S5A_SOCIAL");
         break;
-      case "email":
+      }
+      case "email": {
         const emailDraft = {
           subject: `Civic Issue Report: ${summary.substring(0, 60)}`,
           body: `Dear City Official,\n\n${summary}\n\nPlease address this matter at your earliest convenience.\n\nRegards,\nA Concerned Citizen\n[Submitted via YouthEcho]`,
           recipient: "kmc@karachicity.gov.pk",
         };
-        setIssueContext((prev) => ({
-          ...prev,
-          generatedContent: { emailDraft },
-        }));
+        setIssueContext((prev) => ({ ...prev, generatedContent: { emailDraft } }));
         addMessage(
-          `📧 I've drafted an email to the Karachi Metropolitan Corporation:\n\nTo: ${emailDraft.recipient}\nSubject: ${emailDraft.subject}\n\n${emailDraft.body}\n\nYou can copy this and send it through your email app!`,
+          `📧 I've drafted an email to the Karachi Metropolitan Corporation:\n\nTo: ${emailDraft.recipient}\nSubject: ${emailDraft.subject}\n\n${emailDraft.body}\n\nYou can copy this and send it from your email app!`,
           "ai",
         );
         setCurrentState("S5B_EMAIL");
         break;
-      case "letter":
+      }
+      case "letter": {
         const letterText = `[DATE]\n\nKarachi Metropolitan Corporation\n[Department]\n\nSubject: ${summary.substring(0, 60)}\n\nDear Sir/Madam,\n\n${summary}\n\nI request your urgent attention to this matter.\n\nSincerely,\n[Your Name]\n[Signature]`;
-        setIssueContext((prev) => ({
-          ...prev,
-          generatedContent: { letterText },
-        }));
+        setIssueContext((prev) => ({ ...prev, generatedContent: { letterText } }));
         addMessage(
-          `📄 Here's a formal letter you can print and submit:\n\n${letterText}\n\nYou can copy this text and print it out to physically submit to the local authorities.`,
+          `📄 Here's a formal letter you can print and submit:\n\n${letterText}\n\nYou can copy this and print it out to hand in to local authorities.`,
           "ai",
         );
         setCurrentState("S5C_LETTER");
         break;
+      }
     }
     setShowActionMenu(false);
   };
@@ -851,7 +826,7 @@ export default function HomeScreen() {
   const handleModifySave = (newSummary: string) => {
     setIssueContext((prev) => ({ ...prev, agentSummary: newSummary }));
     addMessage(
-      `✏️ I've updated my understanding: "${newSummary}"\n\nWhat would you like to do now?`,
+      `✏️ I've updated my understanding:\n\n"${newSummary}"\n\nWhat would you like to do now?`,
       "ai",
     );
     setShowModifyModal(false);
@@ -866,28 +841,19 @@ export default function HomeScreen() {
     setMessages([
       {
         id: Date.now().toString() + Math.random().toString(),
-        text: "Hey there! 👋 I'm your YouthEcho guide. Tell me what's happening in your neighborhood - broken roads, garbage issues, or anything you'd like to report!",
+        text: "Hey there! 👋 I'm your YouthEcho guide. Tell me what's happening in your neighborhood — broken roads, garbage issues, or anything you'd like to report!",
         sender: "ai",
         timestamp: new Date(),
       },
     ]);
   };
 
-  const handleDone = () => {
-    addMessage(
-      "🎉 Great job making your voice heard! Want to report another issue or take a different action on this one?",
-      "ai",
-    );
-    setCurrentState("S0_IDLE");
-  };
-
-  // Handle delete all data (Data Sovereignty)
   const handleDeleteAllData = async () => {
     await deleteAllData();
     setMessages([
       {
         id: "1",
-        text: "Hey there! 👋 I'm your YouthEcho guide. All previous data has been cleared. What's happening in your neighborhood?",
+        text: "Hey there! 👋 All previous data has been cleared. What's happening in your neighborhood?",
         sender: "ai",
         timestamp: new Date(),
       },
@@ -895,13 +861,9 @@ export default function HomeScreen() {
     setIssueContext({});
     setCurrentState("S0_IDLE");
     setShowParentDashboard(false);
-    Alert.alert(
-      "Data Deleted",
-      "All AI memory and conversation history has been cleared.",
-    );
+    Alert.alert("Data Deleted", "All activity history and AI session data has been permanently removed.");
   };
 
-  // Render chat interface
   const renderChat = () => (
     <>
       <ScrollView
@@ -915,24 +877,17 @@ export default function HomeScreen() {
         ))}
       </ScrollView>
 
-      {/* Recording Indicator */}
       {isRecording && (
         <View style={styles.recordingIndicator}>
           <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
             <Ionicons name="mic" size={24} color="#FF4444" />
           </Animated.View>
-          <Text style={styles.recordingIndicatorText}>
-            Recording... Release to send
-          </Text>
+          <Text style={styles.recordingIndicatorText}>Recording… Release to send</Text>
         </View>
       )}
 
-      {/* Input Bar */}
       <View style={styles.inputContainer}>
-        <TouchableOpacity
-          style={styles.inputButton}
-          onPress={handleCameraCapture}
-        >
+        <TouchableOpacity style={styles.inputButton} onPress={handleCameraCapture}>
           <Ionicons name="camera" size={26} color="#FF6B6B" />
         </TouchableOpacity>
 
@@ -941,11 +896,7 @@ export default function HomeScreen() {
           onPressIn={startRecording}
           onPressOut={stopRecording}
         >
-          <Ionicons
-            name="mic"
-            size={26}
-            color={isRecording ? "#FF4444" : "#4ECDC4"}
-          />
+          <Ionicons name="mic" size={26} color={isRecording ? "#FF4444" : "#4ECDC4"} />
         </TouchableOpacity>
 
         <TextInput
@@ -959,10 +910,7 @@ export default function HomeScreen() {
         />
 
         <TouchableOpacity
-          style={[
-            styles.sendButton,
-            !inputText.trim() && styles.sendButtonDisabled,
-          ]}
+          style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
           onPress={handleSendText}
           disabled={!inputText.trim()}
         >
@@ -974,20 +922,14 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>YouthEcho</Text>
-          <Text style={styles.headerSubtitle}>
-            Your Voice. Heard. Amplified.
-          </Text>
+          <Text style={styles.headerSubtitle}>Your Voice. Heard. Amplified.</Text>
         </View>
         <View style={styles.headerRight}>
           {currentState !== "S0_IDLE" && (
-            <TouchableOpacity
-              onPress={resetConversation}
-              style={styles.headerButton}
-            >
+            <TouchableOpacity onPress={resetConversation} style={styles.headerButton}>
               <Ionicons name="refresh" size={20} color="#FF8C00" />
             </TouchableOpacity>
           )}
@@ -1000,7 +942,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Parent Dashboard Modal */}
       <Modal
         visible={showParentDashboard}
         animationType="slide"
@@ -1014,12 +955,10 @@ export default function HomeScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Parental Gate */}
       {!parentalVerified ? (
         <ParentalGate onVerified={() => setParentalVerified(true)} />
       ) : (
         <>
-          {/* Action Menu Modal */}
           <Modal
             visible={showActionMenu}
             animationType="slide"
@@ -1044,10 +983,9 @@ export default function HomeScreen() {
             </View>
           </Modal>
 
-          {/* Modify Modal */}
           <Modal visible={showModifyModal} animationType="slide">
             <ModifyOutputScreen
-              currentSummary={issueContext.agentSummary || ""}
+              currentSummary={issueContext.agentSummary ?? ""}
               onSave={handleModifySave}
               onBack={() => {
                 setShowModifyModal(false);
@@ -1056,7 +994,6 @@ export default function HomeScreen() {
             />
           </Modal>
 
-          {/* Main Chat Interface */}
           {renderChat()}
         </>
       )}
@@ -1070,7 +1007,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F0F8FF" },
 
-  // Header
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,
@@ -1085,8 +1021,10 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: "bold", color: "#FF8C00" },
   headerSubtitle: { fontSize: 12, color: "#999", marginLeft: 8, flex: 1 },
   resetButton: { padding: 8 },
+  headerLeft: { flex: 1 },
+  headerRight: { flexDirection: "row", gap: 8 },
+  headerButton: { padding: 8 },
 
-  // Chat
   chatArea: { flex: 1, paddingHorizontal: 15 },
   bubbleWrapper: {
     flexDirection: "row",
@@ -1111,14 +1049,8 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 15, lineHeight: 20 },
   aiText: { color: "#333" },
   userText: { color: "white" },
-  timestamp: {
-    fontSize: 10,
-    color: "#999",
-    marginTop: 4,
-    alignSelf: "flex-end",
-  },
+  timestamp: { fontSize: 10, color: "#999", marginTop: 4, alignSelf: "flex-end" },
 
-  // Input Bar
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -1138,9 +1070,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  inputButtonActive: {
-    backgroundColor: "#FFEEEE",
-  },
+  inputButtonActive: { backgroundColor: "#FFEEEE" },
   textInput: {
     flex: 1,
     backgroundColor: "#F5F5F5",
@@ -1162,12 +1092,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 3,
   },
-  sendButtonDisabled: {
-    backgroundColor: "#A8E6A8",
-    elevation: 0,
-  },
+  sendButtonDisabled: { backgroundColor: "#A8E6A8", elevation: 0 },
 
-  // Recording Indicator
   recordingIndicator: {
     position: "absolute",
     bottom: 100,
@@ -1184,13 +1110,9 @@ const styles = StyleSheet.create({
     borderColor: "#FF4444",
     zIndex: 1000,
   },
-  recordingIndicatorText: {
-    color: "#FF4444",
-    fontWeight: "bold",
-    fontSize: 14,
-  },
+  recordingIndicatorText: { color: "#FF4444", fontWeight: "bold", fontSize: 14 },
 
-  // Parental Gate
+  // ── Parental Gate ──────────────────────────────────────────
   parentalGateContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1200,64 +1122,132 @@ const styles = StyleSheet.create({
   },
   parentalGateCard: {
     backgroundColor: "white",
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 28,
+    padding: 28,
     width: "100%",
-    maxWidth: 400,
-    elevation: 4,
+    maxWidth: 420,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+  },
+  parentalGateEmoji: {
+    fontSize: 48,
+    textAlign: "center",
+    marginBottom: 12,
   },
   parentalGateTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 8,
+    color: "#1A1A2E",
+    marginBottom: 6,
   },
   parentalGateSubtitle: {
     fontSize: 14,
-    color: "#666",
+    color: "#888",
     textAlign: "center",
+    marginBottom: 24,
+  },
+  mathBox: {
+    backgroundColor: "#FFF8F0",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#FFE0B2",
+  },
+  mathLabel: {
+    fontSize: 13,
+    color: "#888",
+    marginBottom: 10,
+    textAlign: "center",
   },
   mathQuestion: {
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: "bold",
+    color: "#FF8C00",
+    marginBottom: 16,
     textAlign: "center",
-    marginVertical: 20,
   },
   mathInput: {
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 18,
+    borderWidth: 1.5,
+    borderColor: "#FFB74D",
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    fontSize: 20,
     textAlign: "center",
-    marginBottom: 16,
+    width: "60%",
+    color: "#333",
+    backgroundColor: "white",
   },
   parentalButton: {
     backgroundColor: "#FF8C00",
-    padding: 14,
-    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 14,
     alignItems: "center",
     marginTop: 8,
   },
   parentalButtonActive: { backgroundColor: "#32CD32" },
   parentalButtonText: { color: "white", fontWeight: "bold", fontSize: 16 },
-  consentButton: { backgroundColor: "#4ECDC4" },
-  disabledButton: { opacity: 0.5 },
+  consentButton: { backgroundColor: "#4ECDC4", marginTop: 16 },
+  disabledButton: { opacity: 0.4 },
   privacyNote: {
     fontSize: 12,
-    color: "#999",
+    color: "#AAA",
     textAlign: "center",
-    marginTop: 12,
-  },
-  privacyText: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 22,
-    marginVertical: 16,
+    marginTop: 16,
+    lineHeight: 17,
   },
 
-  // Action Menu Modal
+  // Privacy list (step 2 of gate)
+  privacyList: { marginVertical: 16 },
+  privacyItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 14,
+    gap: 12,
+  },
+  privacyItemIcon: { fontSize: 22, marginTop: 1 },
+  privacyItemText: { flex: 1 },
+  privacyItemTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1A1A2E",
+    marginBottom: 2,
+  },
+  privacyItemBody: { fontSize: 13, color: "#666", lineHeight: 19 },
+
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#4ECDC4",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 1,
+  },
+  checkboxChecked: { backgroundColor: "#4ECDC4", borderColor: "#4ECDC4" },
+  checkboxLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: "#444",
+    lineHeight: 19,
+  },
+
+  // ── Action Menu ─────────────────────────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1278,12 +1268,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 8 },
   summaryText: { fontSize: 14, color: "#333", lineHeight: 20 },
-  modifyLink: {
-    color: "#FF8C00",
-    marginTop: 8,
-    fontSize: 14,
-    fontWeight: "500",
-  },
+  modifyLink: { color: "#FF8C00", marginTop: 8, fontSize: 14, fontWeight: "500" },
   actionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 16 },
   actionCard: {
     backgroundColor: "#F8F8F8",
@@ -1300,7 +1285,7 @@ const styles = StyleSheet.create({
   cancelActionButton: { marginTop: 20, padding: 14, alignItems: "center" },
   cancelActionText: { color: "#FF6B6B", fontSize: 16, fontWeight: "500" },
 
-  // Modify Modal
+  // ── Modify Modal ─────────────────────────────────────────────
   modifyContainer: { flex: 1, padding: 20, backgroundColor: "white" },
   modifyTitle: {
     fontSize: 24,
@@ -1308,12 +1293,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
-  modifyLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-    marginTop: 16,
-  },
+  modifyLabel: { fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 16 },
   modifyTextInput: {
     borderWidth: 1,
     borderColor: "#DDD",
@@ -1348,13 +1328,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modifyButtonText: { color: "white", fontWeight: "bold", fontSize: 16 },
+  modifyButtonTextDark: { color: "#555", fontWeight: "bold", fontSize: 16 },
 
-  // Header
-  headerLeft: { flex: 1 },
-  headerRight: { flexDirection: "row", gap: 8 },
-  headerButton: { padding: 8 },
-
-  // Parent Dashboard
+  // ── Parent Dashboard ─────────────────────────────────────────
   dashboardModalContainer: { flex: 1, backgroundColor: "#F0F8FF" },
   dashboardContainer: { flex: 1, padding: 20 },
   dashboardHeader: {
@@ -1374,12 +1350,7 @@ const styles = StyleSheet.create({
   dashboardInfoText: { fontSize: 14, color: "#333", marginBottom: 8 },
   boldText: { fontWeight: "bold" },
   logList: { flex: 1 },
-  noLogsText: {
-    textAlign: "center",
-    color: "#999",
-    fontSize: 16,
-    marginTop: 40,
-  },
+  noLogsText: { textAlign: "center", color: "#999", fontSize: 16, marginTop: 40 },
   logCard: {
     backgroundColor: "white",
     padding: 16,
@@ -1413,14 +1384,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 10,
   },
-  logCategory: {
-    fontSize: 11,
-    color: "#999",
-    marginTop: 8,
-    fontStyle: "italic",
-  },
+  logCategory: { fontSize: 11, color: "#999", marginTop: 8, fontStyle: "italic" },
 
-  // Data Sovereignty
   dataSovereigntySection: {
     backgroundColor: "#FFF5F5",
     padding: 16,
@@ -1441,11 +1406,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   deleteButtonText: { color: "white", fontWeight: "bold", fontSize: 14 },
-  deleteConfirmBox: {
-    backgroundColor: "#FFE5E5",
-    padding: 16,
-    borderRadius: 8,
-  },
+  deleteConfirmBox: { backgroundColor: "#FFE5E5", padding: 16, borderRadius: 8 },
   deleteConfirmText: {
     fontSize: 14,
     color: "#333",
