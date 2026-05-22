@@ -7,5 +7,10 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "firebaseConfig.ts"
+  ],
+  "exclude": [
+    "myfiles",
+    "node_modules",
+    "firebase/functions/node_modules"
   ]
 }
