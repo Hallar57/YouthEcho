@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Complaints: kids can create, only owner can read/delete
+    match /complaints/{complaintId} {
+      allow create: if request.auth != null;
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow update: if false;
+    }
+
+    // AI history: only owner can read/delete
+    match /aiHistory/{docId} {
+      allow create: if request.auth != null;
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow update: if false;
+    }
+
+    // Parent dashboard: only the parent (same uid) can access
+    match /users/{userId} {
+      allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Reports written by Cloud Function — readable/deletable by any authenticated user
+    match /reports/{reportId} {
+      allow read, delete: if request.auth != null;
+      allow create, update: if false;
+    }
+
+    // Block everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

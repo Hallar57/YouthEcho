@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Share,
   Animated,
   Modal,
   Platform,
@@ -23,21 +22,14 @@ import {
   deleteAllData,
   runAgenticWorkflow,
 } from "../../services/aiService";
-import type { Message, IssueContext, SystemState } from "../types";
+import type { Message, SystemState } from "../types";
 import { colors, borderRadius, spacing, fontSize } from "../styles/theme";
 import ChatBubble from "../components/ChatBubble";
 import ParentalGate from "../components/ParentalGate";
-import ActionMenu from "../components/ActionMenu";
-import ModifyOutputScreen from "../components/ModifyOutputScreen";
 import ParentDashboard from "../components/ParentDashboard";
 
 let _msgCounter = 0;
 const nextId = () => `msg_${Date.now()}_${++_msgCounter}`;
-
-const toSeverity = (s: string | undefined): "low" | "medium" | "high" => {
-  if (s === "low" || s === "medium" || s === "high") return s;
-  return "medium";
-};
 
 const AGENT_STEPS = ["Classifying...", "Cross-referencing...", "Drafting..."];
 
@@ -50,15 +42,12 @@ const INITIAL_MESSAGE: Message = {
 
 export default function HomeScreen() {
   const [currentState, setCurrentState] = useState<SystemState>("IDLE");
-  const [issueContext, setIssueContext] = useState<IssueContext>({});
   const [parentalVerified, setParentalVerified] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [showModifyModal, setShowModifyModal] = useState(false);
-  const [showActionMenu, setShowActionMenu] = useState(false);
   const [showParentDashboard, setShowParentDashboard] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -156,18 +145,6 @@ export default function HomeScreen() {
         return;
       }
 
-      setIssueContext((prev) => ({
-        ...prev,
-        text: userMessage,
-        category: agentResult.category ?? "other",
-        location: agentResult.location ?? "unknown",
-        severity: toSeverity(agentResult.severity),
-        agentSummary: agentResult.summary || agentResult.friendlyResponse,
-        generatedContent: {
-          [agentResult.action.type]: agentResult.action.content,
-        },
-      }));
-
       addMessage(agentResult.friendlyResponse, "ai");
       setCurrentState("IDLE");
     } catch (error) {
@@ -204,26 +181,9 @@ export default function HomeScreen() {
           { imageBase64 },
         );
 
-        const agentSummary = agentResult.summary || agentResult.friendlyResponse || "I've analyzed your photo.";
-
-        setIssueContext({
-          imageUri: result.assets[0].uri,
-          category: agentResult.category ?? "other",
-          location: agentResult.location ?? "detected from image",
-          severity: toSeverity(agentResult.severity),
-          agentSummary,
-          generatedContent: {
-            [agentResult.action.type]: agentResult.action.content,
-          },
-        });
-
-        addMessage(
-          `📋 I've analyzed your photo:\n\n${agentSummary}\n\nWhat would you like to do about this?`,
-          "ai",
-        );
+        addMessage(agentResult.friendlyResponse, "ai");
         setIsAnalyzing(false);
-        setCurrentState("ACTION_MENU");
-        setShowActionMenu(true);
+        setCurrentState("IDLE");
       } catch (error) {
         setIsAnalyzing(false);
         console.error("Image analysis error:", error);
@@ -281,27 +241,9 @@ export default function HomeScreen() {
         audioBase64,
       });
 
-      const transcribedText = agentResult.summary || agentResult.friendlyResponse || "";
-
-      setIssueContext({
-        voiceTranscript: transcribedText,
-        text: transcribedText,
-        category: agentResult.category ?? "other",
-        location: agentResult.location ?? "voice message",
-        severity: toSeverity(agentResult.severity),
-        agentSummary: agentResult.friendlyResponse,
-        generatedContent: {
-          [agentResult.action.type]: agentResult.action.content,
-        },
-      });
-
-      addMessage(
-        `🎙️ I've analyzed your voice message:\n\n"${transcribedText}"\n\n${agentResult.friendlyResponse}\n\nHow would you like to take action?`,
-        "ai",
-      );
+      addMessage(agentResult.friendlyResponse, "ai");
       setIsAnalyzing(false);
-      setCurrentState("ACTION_MENU");
-      setShowActionMenu(true);
+      setCurrentState("IDLE");
     } catch (error) {
       setIsAnalyzing(false);
       console.error("Voice transcription error:", error);
@@ -310,67 +252,8 @@ export default function HomeScreen() {
     }
   };
 
-  const handleActionSelect = async (action: "social" | "email" | "letter") => {
-    const summary = issueContext.agentSummary ?? "";
-    const existing = issueContext.generatedContent;
-
-    if (action === "email") {
-      const existingContent = existing?.emailDraft;
-      const body = typeof existingContent === "object" && existingContent !== null
-        ? (existingContent as { body?: string }).body ?? ""
-        : `Dear City Official,\n\n${summary}\n\nPlease address this matter at your earliest convenience.\n\nRegards,\nA Concerned Citizen\n[Submitted via YouthEcho]`;
-      const emailDraft = {
-        subject: `Civic Issue Report: ${summary.substring(0, 60)}`,
-        body,
-        recipient: "kmc@karachicity.gov.pk",
-      };
-      setIssueContext((prev) => ({ ...prev, generatedContent: { ...prev.generatedContent, emailDraft } }));
-      addMessage(
-        `📧 I've drafted an email to the Karachi Metropolitan Corporation:\n\n${body}\n\nYou can copy this and send it from your email app!`,
-        "ai",
-      );
-      setCurrentState("EMAIL");
-    } else if (action === "letter") {
-      const content = existing?.letterText || `[DATE]\n\nKarachi Metropolitan Corporation\n\nSubject: ${summary.substring(0, 60)}\n\nDear Sir/Madam,\n\n${summary}\n\nSincerely,\n[Your Name]`;
-      setIssueContext((prev) => ({ ...prev, generatedContent: { ...prev.generatedContent, letterText: content } }));
-      addMessage(
-        `📄 Here's a formal letter you can print and submit:\n\n${content}\n\nYou can copy this and print it out to hand in to local authorities.`,
-        "ai",
-      );
-      setCurrentState("LETTER");
-    } else {
-      const content = existing?.socialPost || `🚨 URGENT: ${summary.substring(0, 120)}...\n\n📍 Location: ${issueContext.location || "unknown"}\n#Karachi #CivicIssues #YouthEcho`;
-      setIssueContext((prev) => ({ ...prev, generatedContent: { ...prev.generatedContent, socialPost: content } }));
-      addMessage(
-        `📱 Opening share menu...`,
-        "ai",
-      );
-      try {
-        await Share.share({ message: content, title: "Report via YouthEcho" });
-      } catch (e) {
-        addMessage(`📱 Here's your post:\n\n"${content}"\n\nCopy and share it on social media!`, "ai");
-      }
-      setCurrentState("SOCIAL");
-    }
-
-    setShowActionMenu(false);
-  };
-
-  const handleModifySave = (newSummary: string) => {
-    setIssueContext((prev) => ({ ...prev, agentSummary: newSummary }));
-    addMessage(
-      `✏️ I've updated my understanding:\n\n"${newSummary}"\n\nWhat would you like to do now?`,
-      "ai",
-    );
-    setShowModifyModal(false);
-    setCurrentState("ACTION_MENU");
-    setShowActionMenu(true);
-  };
-
   const resetConversation = () => {
-    setIssueContext({});
     setCurrentState("IDLE");
-    setShowActionMenu(false);
     setMessages([{ ...INITIAL_MESSAGE, id: nextId(), timestamp: new Date() }]);
   };
 
@@ -382,7 +265,6 @@ export default function HomeScreen() {
       sender: "ai",
       timestamp: new Date(),
     }]);
-    setIssueContext({});
     setCurrentState("IDLE");
     setShowParentDashboard(false);
     Alert.alert("Data Deleted", "All activity history and AI session data has been permanently removed.");
@@ -516,45 +398,7 @@ export default function HomeScreen() {
       {!parentalVerified ? (
         <ParentalGate onVerified={() => setParentalVerified(true)} />
       ) : (
-        <>
-          <Modal
-            visible={showActionMenu}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setShowActionMenu(false)}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <ActionMenu
-                  issueContext={issueContext}
-                  onActionSelect={handleActionSelect}
-                  onModify={() => {
-                    setShowActionMenu(false);
-                    setShowModifyModal(true);
-                  }}
-                  onCancel={() => {
-                    setShowActionMenu(false);
-                    resetConversation();
-                  }}
-                  onBack={() => setShowActionMenu(false)}
-                />
-              </View>
-            </View>
-          </Modal>
-
-          <Modal visible={showModifyModal} animationType="slide">
-            <ModifyOutputScreen
-              currentSummary={issueContext.agentSummary ?? ""}
-              onSave={handleModifySave}
-              onBack={() => {
-                setShowModifyModal(false);
-                setShowActionMenu(true);
-              }}
-            />
-          </Modal>
-
-          {renderChat()}
-        </>
+        renderChat()
       )}
     </SafeAreaView>
   );
@@ -657,18 +501,6 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   recordingIndicatorText: { color: colors.error, fontWeight: "bold", fontSize: fontSize.base },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: borderRadius.round,
-    borderTopRightRadius: borderRadius.round,
-    maxHeight: "80%",
-  },
 
   dashboardModalContainer: { flex: 1, backgroundColor: colors.background },
 });

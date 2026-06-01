@@ -47,12 +47,14 @@ No human instruction required at any step.
 ## Setup
 
 ```bash
-git clone https://github.com/yourname/YouthEcho
+git clone https://github.com/Hallar57/YouthEcho
 cd YouthEcho
 npm install
 npx expo start -c
 ```
+
 ### Firebase Setup
+
 ```bash
 npm install -g firebase-tools
 firebase login
@@ -66,6 +68,13 @@ firebase deploy --only firestore:rules
 firebase functions:secrets:set GROQ_API_KEY
 firebase functions:secrets:set RESEND_API_KEY
 ```
+
+---
+
+### Environment Variables
+
+Create a `firebaseConfig.ts` with your Firebase project credentials.
+Groq and Resend keys are stored as Firebase secrets, not in the codebase.
 
 ---
 
@@ -96,6 +105,15 @@ YouthEcho/
 - **Audio Deletion:** Voice recordings deleted immediately after transcription
 - **Data Sovereignty:** Parent can delete all data with one button
 - **Anonymous Auth:** No names or identifiers collected
+
+---
+
+## Ethics & Bias
+
+- Tested with Urdu-influenced English inputs (e.g. "bijli nahi hai", "pani band ho gaya")
+- AI responses use age-appropriate language for children under 15
+- No real names, photos, or biometric data stored
+- All AI decisions are logged and reviewable by parents
 
 ---
 

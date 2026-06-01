@@ -1,8 +1,6 @@
 export type SystemState =
   | "IDLE"
   | "ANALYZING"
-  | "ACTION_MENU"
-  | "MODIFY"
   | "SOCIAL"
   | "EMAIL"
   | "LETTER";
@@ -12,21 +10,6 @@ export interface Message {
   text: string;
   sender: "user" | "ai";
   timestamp: Date;
-}
-
-export interface IssueContext {
-  text?: string;
-  imageUri?: string;
-  voiceTranscript?: string;
-  category?: string;
-  location?: string;
-  severity?: "low" | "medium" | "high";
-  agentSummary?: string;
-  generatedContent?: {
-    socialPost?: string;
-    emailDraft?: { subject: string; body: string; recipient?: string };
-    letterText?: string;
-  };
 }
 
 export interface ReportAction {
