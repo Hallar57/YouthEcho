@@ -79,14 +79,13 @@ Groq and Resend keys are stored as Firebase secrets, not in the codebase.
 ---
 
 ## Project Structure
-
+```
 YouthEcho/
 ├── app/
 │ ├── screens/HomeScreen.tsx # Main chat interface
 │ ├── components/
 │ │ ├── ParentalGate.tsx # COPPA math gate + privacy disclosure
 │ │ ├── ParentDashboard.tsx # Activity log + data deletion
-│ │ ├── ActionMenu.tsx # Email / letter / social options
 │ │ └── ChatBubble.tsx # Message UI
 │ └── types.ts
 ├── firebase/
@@ -95,7 +94,7 @@ YouthEcho/
 │ └── aiService.ts # Firebase function calls
 ├── firebaseConfig.ts
 └── firestore.rules
-
+```
 ---
 
 ## Safety & Compliance
@@ -131,10 +130,4 @@ YouthEcho/
 
 ## Course
 
-CSC-4101 — SZABIST University Karachi
-
----
-
-## License
-
-Built for educational purposes as part of an AI for Social Good initiative.
+CSC4101 Artificial Intelligence — SZABIST University Karachi
