@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Alert,
   Animated,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -114,7 +115,11 @@ const ParentalGate = ({ onVerified }: { onVerified: () => void }) => {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.scrollContainer}
+      contentContainerStyle={styles.scrollContainerContent}
+      keyboardShouldPersistTaps="handled"
+    >
       <Animated.View
         style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
       >
@@ -155,7 +160,7 @@ const ParentalGate = ({ onVerified }: { onVerified: () => void }) => {
           <Text style={styles.buttonText}>Enter YouthEcho ✨</Text>
         </TouchableOpacity>
       </Animated.View>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -238,6 +243,16 @@ const styles = StyleSheet.create({
   buttonText: { color: colors.white, fontWeight: "bold", fontSize: fontSize.lg },
   consentButton: { backgroundColor: colors.secondary, marginTop: spacing.lg },
   disabledButton: { opacity: 0.4 },
+  scrollContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scrollContainerContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
   privacyNote: {
     fontSize: fontSize.sm,
     color: "#AAA",

@@ -10,6 +10,8 @@ export interface Message {
   text: string;
   sender: "user" | "ai";
   timestamp: Date;
+  audioUri?: string;
+  imageUri?: string;
 }
 
 export interface ReportAction {

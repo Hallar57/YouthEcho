@@ -3,8 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Modal,
-  Platform,
+  Dimensions,
+  PanResponder,
+  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,10 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { readAsStringAsync, EncodingType } from "expo-file-system/legacy";
+import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { auth, signInAnonymously } from "../../firebaseConfig";
 import {
@@ -48,12 +50,85 @@ export default function HomeScreen() {
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isLockedRecording, setIsLockedRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [showParentDashboard, setShowParentDashboard] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [activeStep, setActiveStep] = useState(-1);
+  const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   const buttonPulse = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(Dimensions.get("window").width)).current;
+  const [dashboardVisible, setDashboardVisible] = useState(false);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const recordingIdRef = useRef(0);
+  const isStoppingRef = useRef(false);
+  const isLockedRef = useRef(false);
+  const startRecRef = useRef<() => void>(() => {});
+  const sendRecRef = useRef<() => void>(() => {});
+  const cancelRecRef = useRef<() => void>(() => {});
+  const cancelProgress = useRef(new Animated.Value(0)).current;
+  const lockScale = useRef(new Animated.Value(1)).current;
+  const boxScale = useRef(new Animated.Value(1)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
+      onPanResponderGrant: () => {
+        isLockedRef.current = false;
+        startRecRef.current();
+      },
+      onPanResponderMove: (_, gs) => {
+        if (gs.dy < -60 && !isLockedRef.current) {
+          isLockedRef.current = true;
+          setIsLockedRecording(true);
+        }
+        if (gs.dx < -120) {
+          isLockedRef.current = true;
+          cancelProgress.setValue(0);
+          cancelRecRef.current();
+        } else if (gs.dx < 0) {
+          cancelProgress.setValue(Math.min(Math.abs(gs.dx) / 120, 1));
+        }
+      },
+      onPanResponderRelease: () => {
+        cancelProgress.setValue(0);
+        if (isLockedRef.current) {
+          isLockedRef.current = false;
+          cancelRecRef.current();
+        } else {
+          sendRecRef.current();
+        }
+      },
+      onPanResponderTerminate: () => {
+        cancelProgress.setValue(0);
+        if (!isLockedRef.current) {
+          cancelRecRef.current();
+        }
+        isLockedRef.current = false;
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    if (showParentDashboard) {
+      setDashboardVisible(true);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: Dimensions.get("window").width,
+        duration: 250,
+        useNativeDriver: true,
+      }).start(() => setDashboardVisible(false));
+    }
+  }, [showParentDashboard, slideAnim]);
 
   useEffect(() => {
     const initFirebase = async () => {
@@ -93,6 +168,23 @@ export default function HomeScreen() {
     const t2 = setTimeout(() => setActiveStep(2), 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [isAnalyzing]);
+
+  const prevLockedRef = useRef(false);
+  useEffect(() => {
+    if (isLockedRecording !== prevLockedRef.current) {
+      prevLockedRef.current = isLockedRecording;
+      if (isLockedRecording) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      lockScale.setValue(1.4);
+      Animated.spring(lockScale, {
+        toValue: 1,
+        friction: 3,
+        tension: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isLockedRecording, lockScale]);
 
   const addMessage = (text: string, sender: "user" | "ai") => {
     const newMessage: Message = {
@@ -169,12 +261,20 @@ export default function HomeScreen() {
     });
 
     if (!result.canceled) {
-      addMessage("📸 [Photo attached]", "user");
+      const asset = result.assets[0];
+      const imageMessage: Message = {
+        id: nextId(),
+        text: "",
+        sender: "user",
+        timestamp: new Date(),
+        imageUri: asset.uri,
+      };
+      setMessages((prev) => [...prev, imageMessage]);
       setCurrentState("ANALYZING");
       setIsAnalyzing(true);
 
       try {
-        const imageBase64 = result.assets[0].base64 ?? "";
+        const imageBase64 = asset.base64 ?? "";
 
         const agentResult = await runAgenticWorkflow(
           "What's in this image? Describe any civic issues you see.",
@@ -193,10 +293,19 @@ export default function HomeScreen() {
     }
   };
 
-  const startRecording = async () => {
-    if (isSending || isAnalyzing) return;
+  const formatDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const handleRecordingStart = async () => {
+    if (isSending || isAnalyzing || isStoppingRef.current) return;
+
+    const myId = ++recordingIdRef.current;
+
     const hasPermission = await requestMicrophonePermission();
-    if (!hasPermission) return;
+    if (!hasPermission || myId !== recordingIdRef.current) return;
 
     try {
       await Audio.setAudioModeAsync({
@@ -206,29 +315,79 @@ export default function HomeScreen() {
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
+
+      if (myId !== recordingIdRef.current) {
+        try {
+          await recording.stopAndUnloadAsync();
+        } catch {
+          // superceded by a newer recording
+        }
+        return;
+      }
+
       setRecording(recording);
       setIsRecording(true);
+      setIsLockedRecording(false);
+      setRecordingDuration(0);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      boxScale.setValue(0.9);
+      Animated.spring(boxScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }).start();
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
     } catch (error) {
       console.error("Recording start error:", error);
       Alert.alert("Failed to record", "Please try again");
     }
   };
 
-  const stopRecording = async () => {
-    if (!recording) return;
+  const handleRecordingSend = async () => {
+    isStoppingRef.current = true;
+    recordingIdRef.current++;
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    if (!recording) {
+      isStoppingRef.current = false;
+      return;
+    }
 
     setIsRecording(false);
-    const uri = recording.getURI();
-    await recording.stopAndUnloadAsync();
+    setIsLockedRecording(false);
+    setRecordingDuration(0);
+    let uri: string | null = null;
+    try {
+      uri = recording.getURI();
+      await recording.stopAndUnloadAsync();
+    } catch {
+      // recorder already cleaned up
+    }
     setRecording(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     if (!uri) {
       addMessage("🎙️ Failed to save recording. Please try again.", "ai");
       setCurrentState("IDLE");
+      isStoppingRef.current = false;
       return;
     }
 
-    addMessage("🎙️ [Voice recording submitted]", "user");
+    const audioMessage: Message = {
+      id: nextId(),
+      text: "",
+      sender: "user",
+      timestamp: new Date(),
+      audioUri: uri,
+    };
+    setMessages((prev) => [...prev, audioMessage]);
     setCurrentState("ANALYZING");
     setIsAnalyzing(true);
 
@@ -250,7 +409,105 @@ export default function HomeScreen() {
       addMessage("🎙️ I received your voice message but couldn't process it. Please try typing instead!", "ai");
       setCurrentState("IDLE");
     }
+    isStoppingRef.current = false;
   };
+
+  const handleCancelRecording = async () => {
+    isStoppingRef.current = true;
+    recordingIdRef.current++;
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    if (!recording) {
+      isStoppingRef.current = false;
+      return;
+    }
+
+    setIsRecording(false);
+    setIsLockedRecording(false);
+    setRecordingDuration(0);
+    try {
+      await recording.stopAndUnloadAsync();
+    } catch {
+      // recorder already cleaned up
+    }
+    setRecording(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    isStoppingRef.current = false;
+  };
+
+  const handleSendAudio = async () => {
+    if (!recording || isSending) return;
+    setIsSending(true);
+    isStoppingRef.current = true;
+    recordingIdRef.current++;
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    setIsRecording(false);
+    setIsLockedRecording(false);
+    setRecordingDuration(0);
+    let uri: string | null = null;
+    try {
+      uri = recording.getURI();
+      await recording.stopAndUnloadAsync();
+    } catch {
+      // recorder already cleaned up
+    }
+    setRecording(null);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (!uri) {
+      addMessage("🎙️ Failed to save recording. Please try again.", "ai");
+      setCurrentState("IDLE");
+      setIsSending(false);
+      isStoppingRef.current = false;
+      return;
+    }
+
+    const audioMessage: Message = {
+      id: nextId(),
+      text: "",
+      sender: "user",
+      timestamp: new Date(),
+      audioUri: uri,
+    };
+    setMessages((prev) => [...prev, audioMessage]);
+    setCurrentState("ANALYZING");
+    setIsAnalyzing(true);
+
+    try {
+      const audioBase64 = await readAsStringAsync(uri, {
+        encoding: EncodingType.Base64,
+      });
+
+      const agentResult = await runAgenticWorkflow("", {
+        audioBase64,
+      });
+
+      addMessage(agentResult.friendlyResponse, "ai");
+      setIsAnalyzing(false);
+      setCurrentState("IDLE");
+    } catch (error) {
+      setIsAnalyzing(false);
+      console.error("Voice transcription error:", error);
+      addMessage("🎙️ I received your voice message but couldn't process it. Please try typing instead!", "ai");
+      setCurrentState("IDLE");
+    }
+    isStoppingRef.current = false;
+    setIsSending(false);
+  };
+
+  // Sync refs with latest handler functions
+  startRecRef.current = handleRecordingStart;
+  sendRecRef.current = handleRecordingSend;
+  cancelRecRef.current = handleCancelRecording;
 
   const resetConversation = () => {
     setCurrentState("IDLE");
@@ -271,136 +528,194 @@ export default function HomeScreen() {
   };
 
   const renderChat = () => (
-    <>
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.chatArea}
-        contentContainerStyle={{ paddingVertical: 20 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {messages.map((msg) => (
-          <ChatBubble key={msg.id} message={msg} />
-        ))}
-      </ScrollView>
-
-      {isAnalyzing && (
-        <View style={styles.analyzingIndicator}>
-          {activeStep >= 0 && (
-            <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
-              {AGENT_STEPS.map((step, i) => (
-                <View
-                  key={i}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-                >
-                  {i < activeStep ? (
-                    <Ionicons name="checkmark-circle" size={14} color="#bbb" />
-                  ) : i === activeStep ? (
-                    <ActivityIndicator size={12} color="#888" />
-                  ) : null}
-                  <Text
-                    style={{
-                      color: i <= activeStep ? "#888" : "#ddd",
-                      fontSize: fontSize.sm,
-                    }}
-                  >
-                    {step}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-
-      {isRecording && (
-        <View style={styles.recordingIndicator}>
-          <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
-            <Ionicons name="mic" size={24} color="#FF4444" />
-          </Animated.View>
-          <Text style={styles.recordingIndicatorText}>Recording… Release to send</Text>
-        </View>
-      )}
-
-      <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.inputButton} onPress={handleCameraCapture}>
-          <Ionicons name="camera" size={26} color="#FF6B6B" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.inputButton, isRecording && styles.inputButtonActive]}
-          onPressIn={startRecording}
-          onPressOut={stopRecording}
-        >
-          <Ionicons name="mic" size={26} color={isRecording ? "#FF4444" : "#4ECDC4"} />
-        </TouchableOpacity>
-
-        <TextInput
-          style={styles.textInput}
-          placeholder="Type your concern..."
-          placeholderTextColor={colors.textMuted}
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          editable={!isRecording && !isSending && !isAnalyzing}
-          blurOnSubmit={false}
-          onSubmitEditing={handleSendText}
-        />
-
-        <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (!inputText.trim() || isSending || isAnalyzing) && styles.sendButtonDisabled,
-          ]}
-          onPress={handleSendText}
-          disabled={!inputText.trim() || isSending || isAnalyzing}
-        >
-          <Ionicons name="send" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
-    </>
+    <ScrollView
+      ref={scrollViewRef}
+      style={styles.chatArea}
+      contentContainerStyle={{ paddingVertical: 20 }}
+      showsVerticalScrollIndicator={false}
+    >
+      {messages.map((msg) => (
+        <ChatBubble key={msg.id} message={msg} />
+      ))}
+    </ScrollView>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>YouthEcho</Text>
-          <Text style={styles.headerSubtitle}>Your Voice. Heard. Amplified.</Text>
-        </View>
-        <View style={styles.headerRight}>
-          {currentState !== "IDLE" && (
-            <TouchableOpacity onPress={resetConversation} style={styles.headerButton}>
-              <Ionicons name="refresh" size={20} color="#FF8C00" />
+    <View style={styles.container}>
+      {parentalVerified && (
+        <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>YouthEcho</Text>
+            <Text style={styles.headerSubtitle}>Your Voice. Heard. Amplified.</Text>
+          </View>
+          <View style={styles.headerRight}>
+            {currentState !== "IDLE" && (
+              <TouchableOpacity onPress={resetConversation} style={styles.headerButton}>
+                <Ionicons name="refresh" size={20} color="#FF8C00" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => setShowParentDashboard(true)}
+              style={styles.headerButton}
+            >
+              <Ionicons name="shield-checkmark" size={22} color={colors.secondary} />
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={() => setShowParentDashboard(true)}
-            style={styles.headerButton}
-          >
-            <Ionicons name="shield-checkmark" size={22} color={colors.secondary} />
-          </TouchableOpacity>
+          </View>
         </View>
-      </View>
-
-      <Modal
-        visible={showParentDashboard}
-        animationType="slide"
-        onRequestClose={() => setShowParentDashboard(false)}
-      >
-        <SafeAreaView style={styles.dashboardModalContainer}>
-          <ParentDashboard
-            onClose={() => setShowParentDashboard(false)}
-            onDeleteAllData={handleDeleteAllData}
-          />
-        </SafeAreaView>
-      </Modal>
+      )}
 
       {!parentalVerified ? (
         <ParentalGate onVerified={() => setParentalVerified(true)} />
       ) : (
-        renderChat()
+        <View style={{ flex: 1 }}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+            {renderChat()}
+          </KeyboardAvoidingView>
+          {isAnalyzing && (
+            <View style={styles.analyzingIndicator}>
+              {activeStep >= 0 && (
+                <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+                  {AGENT_STEPS.map((step, i) => (
+                    <View
+                      key={i}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                    >
+                      {i < activeStep ? (
+                        <Ionicons name="checkmark-circle" size={14} color="#bbb" />
+                      ) : i === activeStep ? (
+                        <ActivityIndicator size={12} color="#888" />
+                      ) : null}
+                      <Text
+                        style={{
+                          color: i <= activeStep ? "#888" : "#ddd",
+                          fontSize: fontSize.sm,
+                        }}
+                      >
+                        {step}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+          <View>
+            {isRecording && (
+              <Animated.View style={[styles.lockIconAbove, { transform: [{ scale: lockScale }] }]}>
+                <Text style={styles.lockIcon}>{isLockedRecording ? "🔒" : "🔓"}</Text>
+                <Text style={styles.lockArrow}>↑</Text>
+              </Animated.View>
+            )}
+            <View style={[styles.inputContainer, { paddingBottom: insets.bottom + spacing.sm }]}>
+              <TouchableOpacity
+                style={styles.inputButton}
+                onPress={handleCameraCapture}
+                disabled={isRecording}
+              >
+                <Ionicons name="camera" size={26} color={isRecording ? "#ccc" : "#FF6B6B"} />
+              </TouchableOpacity>
+
+              {isRecording ? (
+                <Animated.View
+                  style={[
+                    styles.recordingBox,
+                    {
+                      transform: [{ scale: boxScale }],
+                      borderColor: cancelProgress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [colors.error, "#FF0000"],
+                      }),
+                    },
+                  ]}
+                >
+                  <View style={styles.recordingBoxLeft}>
+                    <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+                      <View style={styles.recordingDot} />
+                    </Animated.View>
+                    <Text style={styles.recordingText} numberOfLines={1}>
+                      {formatDuration(recordingDuration)}
+                    </Text>
+                  </View>
+                  {!isLockedRecording && (
+                    <View style={styles.recordingBoxRight}>
+                      <Ionicons name="arrow-back" size={14} color={colors.textMuted} />
+                      <Text style={styles.slideToCancelText}> slide to cancel</Text>
+                    </View>
+                  )}
+                  <Animated.View
+                    style={[styles.cancelOverlay, { opacity: cancelProgress }]}
+                    pointerEvents="none"
+                  >
+                    <Ionicons name="close-circle" size={16} color="#FF0000" />
+                    <Text style={styles.cancelOverlayText}>Release to cancel</Text>
+                  </Animated.View>
+                </Animated.View>
+              ) : (
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Type your concern..."
+                  placeholderTextColor={colors.textMuted}
+                  value={inputText}
+                  onChangeText={setInputText}
+                  multiline
+                  editable={!isRecording && !isSending && !isAnalyzing}
+                  blurOnSubmit={false}
+                  onSubmitEditing={handleSendText}
+                />
+              )}
+
+              <View style={styles.voiceButtonArea}>
+                {isRecording && isLockedRecording ? (
+                  <View style={styles.lockedButtonsRow}>
+                    <TouchableOpacity style={styles.smallIconBtn} onPress={handleCancelRecording}>
+                      <Ionicons name="trash-outline" size={20} color={colors.error} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.smallSendBtn} onPress={handleSendAudio} disabled={isSending}>
+                      <Ionicons name="send" size={18} color="white" />
+                    </TouchableOpacity>
+                  </View>
+                ) : isRecording ? (
+                  <View style={[styles.voiceButton, styles.voiceButtonActive]} {...panResponder.panHandlers}>
+                    <Ionicons name="mic" size={26} color="#FF4444" />
+                  </View>
+                ) : inputText.trim() ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.sendButton,
+                      (!inputText.trim() || isSending || isAnalyzing) && styles.sendButtonDisabled,
+                    ]}
+                    onPress={handleSendText}
+                    disabled={!inputText.trim() || isSending || isAnalyzing}
+                  >
+                    <Ionicons name="send" size={20} color="white" />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.voiceButton} {...panResponder.panHandlers}>
+                    <Ionicons name="mic" size={26} color="#4ECDC4" />
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
       )}
+
+      {dashboardVisible && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { transform: [{ translateX: slideAnim }] },
+          ]}
+        >
+          <SafeAreaView style={styles.dashboardModalContainer}>
+            <ParentDashboard
+              onClose={() => setShowParentDashboard(false)}
+              onDeleteAllData={handleDeleteAllData}
+            />
     </SafeAreaView>
+        </Animated.View>
+      )}
+    </View>
   );
 }
 
@@ -428,20 +743,21 @@ const styles = StyleSheet.create({
 
   inputContainer: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    padding: 10,
-    paddingBottom: Platform.OS === "ios" ? 25 : 15,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
     backgroundColor: colors.white,
     borderTopWidth: 1,
     borderColor: colors.border,
-    gap: spacing.sm,
+    gap: 6,
   },
   inputButton: {
-    padding: 10,
+    padding: 8,
     borderRadius: borderRadius.pill,
     backgroundColor: colors.inputBg,
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -460,8 +776,8 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     backgroundColor: colors.success,
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: borderRadius.round,
     justifyContent: "center",
     alignItems: "center",
@@ -470,37 +786,125 @@ const styles = StyleSheet.create({
   sendButtonDisabled: { backgroundColor: "#A8E6A8", elevation: 0 },
 
   analyzingIndicator: {
-    position: "absolute",
-    bottom: 100,
-    left: 20,
-    right: 20,
     backgroundColor: "#F0F0F0",
     borderRadius: borderRadius.round,
-    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#DDD",
-    zIndex: 1000,
+    marginHorizontal: spacing.sm,
+    marginBottom: spacing.xs,
   },
 
-  recordingIndicator: {
-    position: "absolute",
-    bottom: 160,
-    left: 20,
-    right: 20,
+  recordingBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.accentRed,
     borderRadius: borderRadius.round,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    height: 45,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  recordingBoxLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.error,
+  },
+  recordingText: {
+    color: colors.error,
+    fontWeight: "bold",
+    fontSize: fontSize.base,
+  },
+  recordingBoxRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  slideToCancelText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    flexShrink: 1,
+  },
+  cancelOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: borderRadius.round,
+    backgroundColor: "#FFE5E5",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.error,
-    zIndex: 1000,
+    gap: spacing.xs,
   },
-  recordingIndicatorText: { color: colors.error, fontWeight: "bold", fontSize: fontSize.base },
+  cancelOverlayText: {
+    color: "#FF0000",
+    fontWeight: "bold",
+    fontSize: fontSize.sm,
+  },
+  voiceButtonArea: {
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 2,
+  },
+  voiceButton: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.inputBg,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  voiceButtonActive: {
+    backgroundColor: colors.accentRed,
+  },
+  lockIcon: {
+    fontSize: 18,
+  },
+  lockArrow: {
+    fontSize: 10,
+    color: colors.textMuted,
+    lineHeight: 12,
+  },
+  lockIconAbove: {
+    position: "absolute",
+    bottom: "100%",
+    right: 18,
+    alignItems: "center",
+    paddingBottom: 4,
+    zIndex: 10,
+  },
+  lockedButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  smallIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.inputBg,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  smallSendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.success,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
   dashboardModalContainer: { flex: 1, backgroundColor: colors.background },
 });

@@ -77,8 +77,14 @@ const ParentDashboard = ({
                 </Text>
                 <Text style={styles.logTime}>{log.timestamp.toLocaleString()}</Text>
               </View>
-              <Text style={styles.logLabel}>Child&apos;s input:</Text>
-              <Text style={styles.logInput}>{log.userInput}</Text>
+              {log.type === "text" && (
+                <Text style={styles.logLabel}>Child&apos;s input:</Text>
+              )}
+              <Text style={styles.logInput}>
+                {log.type === "text"
+                  ? log.userInput
+                  : `Child sent ${log.type === "image" ? "an Image" : "a Voice Message"}`}
+              </Text>
               <Text style={styles.logLabel}>AI response:</Text>
               <Text style={styles.logResponse}>{log.aiResponse.substring(0, 150)}...</Text>
               <View style={styles.logTools}>
